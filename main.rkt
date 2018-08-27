@@ -8,8 +8,6 @@
          (rename-in racket/contract
                     [-> ->/c]))
 
-;; TODO: what about ill-formed documents?
-
 (provide dtd?
          (contract-out
           [file->dtd
@@ -73,22 +71,12 @@
 
 (define-xml2 xmlParseDoc
   (_fun [s : _string/utf-8]
-        -> [p : (_or-null _xmlDocPtr)]
-        -> (if p
-               p
-               (error 'xmlParseDoc
-                      "could not parse string\n  given...:\n   ~e"
-                      s)))
+        -> [p : (_or-null _xmlDocPtr)])
   #:wrap (allocator xmlFreeDoc))
 
 (define-xml2 xmlParseFile
   (_fun [file : _file]
-        -> [p : (_or-null _xmlDocPtr)]
-        -> (if p
-               p
-               (error 'xmlParseFile
-                      "could not parse file\n  given: ~e"
-                      file)))
+        -> [p : (_or-null _xmlDocPtr)])
   #:wrap (allocator xmlFreeDoc))
 
 
@@ -129,6 +117,23 @@
   #:wrap (allocator fclose)
   #:c-id fopen)
 
+(define-libc fdopen/write
+  (_fun [fd : _int]
+        [_bytes/nul-terminated = #"w"]
+        -> [p : (_or-null _FILE-ptr)]
+        -> (if p
+               p
+               (error 'fopen/write
+                      "fdopen failed\n  given: ~e"
+                      fd)))
+  ;;#:wrap (allocator fclose)
+  ;;NOT an allocator b/c we never want to call close on stderr
+  #:c-id fdopen)
+
+(define stderr-ptr
+  ;; need to check this for Windows
+  (fdopen/write 2))
+
 (define-cstruct _xmlValidCtxt
   ([userData _FILE-ptr] ;; user specific data block 
    [error _fprintf-ptr] ;; the callback in case of errors
@@ -147,6 +152,13 @@
    [am _pointer] ;; the automata
    [state _pointer] ;; used to build the automata
    ))
+
+(define-xml2 xmlSetGenericErrorFunc
+  ;; One can simply force messages to be emitted
+  ;; to another FILE* than stderr by setting
+  ;; @ctx to this file handle and @handler to NULL.
+  (_fun _FILE-ptr [(_or-null _pointer) = #f]
+        -> _void))
 
 (define _xmlValidCtxtPtr
   _xmlValidCtxt-pointer)
@@ -168,42 +180,84 @@
         -> [code : _int]
         -> (= 1 code)))
 
-(define (do-validate dtd doc errors-path)
-  (define valid-ctxt-ptr
-    (xmlNewValidCtxt))
+
+;                                                                                  
+;                                                                                  
+;                                                                                  
+;                                                                                  
+;   ;;         ;            ;;              ;;;;                            ;;;;   
+;   ;;         ;;           ;;                ;;                              ;;   
+;   ;; ;    ;;;;;     ;;;;; ;; ;              ;;      ;;;  ;     ;    ;;;     ;;   
+;   ;;; ;      ;;    ;  ;   ;;; ;             ;;    ;;   ;  ;   ;   ;;   ;    ;;   
+;   ;;  ;;     ;;   ;;  ;;  ;;  ;;            ;;    ;    ;  ;   ;   ;    ;    ;;   
+;   ;;  ;;     ;;    ;  ;   ;;  ;;            ;;   ;;;;;;;;  ;  ;  ;;;;;;;;   ;;   
+;   ;;  ;;     ;;     ;;    ;;  ;;            ;;    ;        ; ;    ;         ;;   
+;   ;;  ;;     ;;   ;;      ;;  ;;             ;    ;;   ;   ; ;    ;;   ;     ;   
+;   ;;  ;;     ;;    ;;;;;  ;;  ;;              ;;    ;;;     ;       ;;;       ;; 
+;                   ;    ;;                                                        
+;                  ;;    ;                                                         
+;                    ;;;;                                                          
+;                                                                                  
+
+(define (do-validate dtd
+                     parse-proc
+                     doc-spec
+                     errors-path)
+  (define (get-error-message)
+    (string->immutable-string
+     (file->string errors-path #:mode 'text)))
   (define errors-file-ptr
     (fopen/write errors-path))
-  (set-xmlValidCtxt-userData! valid-ctxt-ptr errors-file-ptr)
-  (set-xmlValidCtxt-error! valid-ctxt-ptr fprintf-ptr)
-  (set-xmlValidCtxt-warning! valid-ctxt-ptr fprintf-ptr)
-  (define valid?
-    (xmlValidateDtd valid-ctxt-ptr doc dtd))
-  (fclose errors-file-ptr)
-  (xmlFreeValidCtxt valid-ctxt-ptr)
-  (if valid?
-      'valid
-      (string->immutable-string
-       (file->string errors-path #:mode 'text))))
+  (dynamic-wind
+   (λ () (xmlSetGenericErrorFunc errors-file-ptr))
+   (λ ()
+     (define doc
+       (parse-proc doc-spec))
+     (cond
+       [doc
+        (define valid-ctxt-ptr
+          (xmlNewValidCtxt))
+        (set-xmlValidCtxt-userData! valid-ctxt-ptr errors-file-ptr)
+        (set-xmlValidCtxt-error! valid-ctxt-ptr fprintf-ptr)
+        (set-xmlValidCtxt-warning! valid-ctxt-ptr fprintf-ptr)
+        (define valid?
+          (xmlValidateDtd valid-ctxt-ptr doc dtd))
+        (xmlSetGenericErrorFunc stderr-ptr)
+        (fclose errors-file-ptr)
+        (xmlFreeValidCtxt valid-ctxt-ptr)
+        (xmlFreeDoc doc)
+        (if valid?
+            'valid
+            (get-error-message))]
+       [else
+        (xmlSetGenericErrorFunc stderr-ptr)
+        (fclose errors-file-ptr)
+        (get-error-message)]))
+   (λ () (xmlSetGenericErrorFunc stderr-ptr))))
 
-(define (dtd-validate-xml* -dtd doc arg-err-pth)
+(define (dtd-validate-xml* -dtd
+                           parse-proc
+                           doc-spec
+                           arg-err-pth)
   (define errors-file-pth
     (or arg-err-pth
         (make-temporary-file)))
   (define rslt
     (do-validate (dtd-ptr -dtd)
-                 doc
+                 parse-proc
+                 doc-spec
                  errors-file-pth))
-  (xmlFreeDoc doc)
   (unless arg-err-pth
     (delete-file errors-file-pth))
   rslt)
 
 (define (dtd-validate-xml-string -dtd str [arg-err-pth #f])
-  (dtd-validate-xml* -dtd (xmlParseDoc str) arg-err-pth))
+  (dtd-validate-xml* -dtd xmlParseDoc str arg-err-pth))
 
 (define (dtd-validate-xml-file -dtd pth [arg-err-pth #f])
   (dtd-validate-xml* -dtd
-                     (xmlParseFile (path->complete-path pth))
+                     xmlParseFile
+                     (path->complete-path pth)
                      arg-err-pth))
 
 (define (dtd-validate-xexpr -dtd xs [arg-err-pth #f])
