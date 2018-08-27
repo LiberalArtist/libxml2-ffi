@@ -10,7 +10,7 @@
   (ffi-lib #f))
 
 (define _fprintf-ptr
-  (_cpointer 'fprintf-ptr))
+  _fpointer)
 
 (define-libc fprintf-ptr
   _fprintf-ptr
@@ -18,6 +18,14 @@
 
 (define _FILE-ptr
   (_cpointer 'FILE))
+
+(define-libc fclose
+  (_fun _FILE-ptr
+        -> [code : _int]
+        -> (unless (= 0 code)
+             ;; see errno
+             (error 'fclose "failed")))
+  #:wrap (deallocator))
 
 (define-libc fopen/write
   (_fun [file : _file]
@@ -28,14 +36,8 @@
                (error 'fopen/write
                       "fopen failed\n  given: ~e"
                       file)))
+  #:wrap (allocator fclose)
   #:c-id fopen)
-
-(define-libc fclose
-  (_fun _FILE-ptr
-        -> [code : _int]
-        -> (unless (= 0 code)
-             ;; see errno
-             (error 'fclose "failed"))))
 
 (define-cstruct _xmlValidCtxt
   ([userData _FILE-ptr] ;; user specific data block 
@@ -76,40 +78,32 @@
         -> [code : _int]
         -> (= 1 code)))
 
-(module+ main
-  (require racket/cmdline)
-  
-  (define-runtime-path rkt-errors.txt-path
-    "rkt-errors.txt")
+(define-runtime-path rkt-errors.txt-path
+  "rkt-errors.txt")
 
-  (define use-error-file? #t)
-  (define use-doc-ptr bad-doc)
-  
-  (command-line
-   #:once-any
-   [("--bad-doc") "Use an invalid document."
-                  (set! use-doc-ptr bad-doc)]
-   [("--good-doc") "Use a valid document."
-                   (set! use-doc-ptr good-doc)]
-   #:once-any
-   [("--use-error-file") "Set the xmlValidCtxt to write to \"rkt-errors.txt\"."
-                         (set! use-error-file? #t)]
-   [("--no-error-file") "Don't mutate the result of xmlNewValidCtxt()"
-                        (set! use-error-file? #f)]
-   #:args ()
-   (define valid-ctxt-ptr
-     (xmlNewValidCtxt))
+(define (do-validate dtd doc errors-path)
+  (define valid-ctxt-ptr
+    (xmlNewValidCtxt))
+  (define errors-file-ptr
+    (fopen/write errors-path))
+  (set-xmlValidCtxt-userData! valid-ctxt-ptr errors-file-ptr)
+  (set-xmlValidCtxt-error! valid-ctxt-ptr fprintf-ptr)
+  (set-xmlValidCtxt-warning! valid-ctxt-ptr fprintf-ptr)
+  (define valid?
+    (xmlValidateDtd valid-ctxt-ptr doc dtd))
+  (fclose errors-file-ptr)
+  (xmlFreeValidCtxt valid-ctxt-ptr)
+  (if valid?
+      'valid
+      (file->string errors-path)))
 
-   (when use-error-file?
-     (define errors-file-ptr
-       (fopen/write rkt-errors.txt-path))
-     (set-xmlValidCtxt-userData! valid-ctxt-ptr errors-file-ptr)
-     (set-xmlValidCtxt-error! valid-ctxt-ptr fprintf-ptr)
-     (set-xmlValidCtxt-warning! valid-ctxt-ptr fprintf-ptr))
+(do-validate example.dtd-ptr
+             good-doc
+             rkt-errors.txt-path)
 
-   (xmlValidateDtd valid-ctxt-ptr
-                   use-doc-ptr
-                   example.dtd-ptr)))
+(do-validate example.dtd-ptr
+             bad-doc
+             rkt-errors.txt-path)
 
 
 
