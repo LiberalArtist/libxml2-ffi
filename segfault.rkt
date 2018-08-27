@@ -3,57 +3,8 @@
 (require ffi/unsafe
          ffi/unsafe/define
          ffi/unsafe/alloc
+         "common.rkt"
          racket/runtime-path)
-
-(define-ffi-definer define-xml2
-  (ffi-lib "libxml2"))
-
-(define _xmlDtdPtr
-  (_cpointer 'xmlDtdPtr))
-
-(define-xml2 xmlFreeDtd
-  (_fun _xmlDtdPtr -> _void)
-  #:wrap (deallocator))
-
-(define-xml2 xmlParseDTD
-  (_fun [_pointer = #f]
-        [file : _file]
-        -> [p : (_or-null _xmlDtdPtr)]
-        -> (if p
-               p
-               (error 'xmlParseDTD
-                      "could not parse DTD\n  given: ~e"
-                      file)))
-  #:wrap (allocator xmlFreeDtd))
-
-(define _xmlDocPtr
-  (_cpointer 'xmlDocPtr))
-
-(define-xml2 xmlFreeDoc
-  (_fun _xmlDocPtr -> _void)
-  #:wrap (deallocator))
-
-(define-xml2 xmlParseDoc
-  (_fun [s : _string/utf-8]
-        -> [p : (_or-null _xmlDocPtr)]
-        -> (if p
-               p
-               (error 'xmlParseDoc
-                      "could not parse string\n  given...:\n   ~e"
-                      s)))
-  #:wrap (allocator xmlFreeDoc))
-
-(define-xml2 xmlParseFile
-  (_fun [file : _file]
-        -> [p : (_or-null _xmlDocPtr)]
-        -> (if p
-               p
-               (error 'xmlParseFile
-                      "could not parse file\n  given: ~e"
-                      file)))
-  #:wrap (allocator xmlFreeDoc))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-ffi-definer define-libc
   (ffi-lib #f))
@@ -128,35 +79,24 @@
 (module+ main
   (require racket/cmdline)
   
-  (define-runtime-path example.dtd-path
-    "example.dtd")
   (define-runtime-path rkt-errors.txt-path
     "rkt-errors.txt")
 
-  (define bad-doc-str
-    "<example><bad /></example>")
-  (define good-doc-str
-    "<example><good /></example>")
-
   (define use-error-file? #t)
-  (define use-doc-str bad-doc-str)
+  (define use-doc-ptr bad-doc)
   
   (command-line
    #:once-any
    [("--bad-doc") "Use an invalid document."
-                  (set! use-doc-str bad-doc-str)]
+                  (set! use-doc-ptr bad-doc)]
    [("--good-doc") "Use a valid document."
-                   (set! use-doc-str good-doc-str)]
+                   (set! use-doc-ptr good-doc)]
    #:once-any
    [("--use-error-file") "Set the xmlValidCtxt to write to \"rkt-errors.txt\"."
                          (set! use-error-file? #t)]
    [("--no-error-file") "Don't mutate the result of xmlNewValidCtxt()"
                         (set! use-error-file? #f)]
    #:args ()
-   (define example.dtd-ptr
-     (xmlParseDTD example.dtd-path))
-   (define doc
-     (xmlParseDoc use-doc-str))
    (define valid-ctxt-ptr
      (xmlNewValidCtxt))
 
@@ -168,7 +108,7 @@
      (set-xmlValidCtxt-warning! valid-ctxt-ptr fprintf-ptr))
 
    (xmlValidateDtd valid-ctxt-ptr
-                   doc
+                   use-doc-ptr
                    example.dtd-ptr)))
 
 
