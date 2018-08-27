@@ -6,23 +6,17 @@
 // cc -Wall -I/usr/include/libxml2 -lxml2 -shared -o libmyvalidate.so myvalidate.c
 
 unsigned int my_validate(const xmlDtdPtr dtd,
-			 const xmlChar* docStr,
+			 const xmlDocPtr doc,
 			 const char* outPath) {
-    if (NULL == dtd || NULL == outPath || NULL == docStr) {
-	return 2;
-    }
     const xmlValidCtxtPtr ctxt = xmlNewValidCtxt();
-    if (NULL == ctxt) {
-	return 2;
-    }
-    const xmlDocPtr doc = xmlParseDoc(docStr);
-    if (NULL == doc) {
-	xmlFreeValidCtxt(ctxt);
+    if (NULL == dtd ||
+	NULL == doc ||
+	NULL == outPath ||
+	NULL == ctxt) {
 	return 2;
     }
     FILE* out = fopen(outPath,"w");
     if (NULL == out) {
-	xmlFreeDoc(doc);
 	xmlFreeValidCtxt(ctxt);
 	return 2;
     }
@@ -31,7 +25,6 @@ unsigned int my_validate(const xmlDtdPtr dtd,
     ctxt->warning  = (xmlValidityWarningFunc) fprintf;
     const int rslt = xmlValidateDtd(ctxt,doc,dtd);
     fclose(out);
-    xmlFreeDoc(doc);
     xmlFreeValidCtxt(ctxt);
     if (1 == rslt) {
 	return 0;

@@ -38,9 +38,36 @@
                       file)))
   #:wrap (allocator xmlFreeDtd))
 
+(define _xmlDocPtr
+  (_cpointer 'xmlDocPtr))
+
+(define-xml2 xmlFreeDoc
+  (_fun _xmlDocPtr -> _void)
+  #:wrap (deallocator))
+
+(define-xml2 xmlParseDoc
+  (_fun [s : _string/utf-8]
+        -> [p : (_or-null _xmlDocPtr)]
+        -> (if p
+               p
+               (error 'xmlParseDoc
+                      "could not parse string\n  given...:\n   ~e"
+                      s)))
+  #:wrap (allocator xmlFreeDoc))
+
+(define-xml2 xmlParseFile
+  (_fun [file : _file]
+        -> [p : (_or-null _xmlDocPtr)]
+        -> (if p
+               p
+               (error 'xmlParseFile
+                      "could not parse file\n  given: ~e"
+                      file)))
+  #:wrap (allocator xmlFreeDoc))
+
 (define-drvalidate my_validate
   (_fun _xmlDtdPtr
-        _string/utf-8
+        _xmlDocPtr
         [pth : _file]
         -> [code : _uint]
         -> (match code
@@ -51,17 +78,17 @@
 (define example.dtd-ptr
   (xmlParseDTD example.dtd-path))
 
-(define bad-doc-str
-  "<example><bad /></example>")
+(define bad-doc
+  (xmlParseDoc "<example><bad /></example>"))
 
-(define good-doc-str
-  "<example><good /></example>")
+(define good-doc
+  (xmlParseDoc "<example><good /></example>"))
 
 (my_validate example.dtd-ptr
-             good-doc-str
+             good-doc
              my-so-errors.txt-path)
 
 (my_validate example.dtd-ptr
-             bad-doc-str
+             bad-doc
              my-so-errors.txt-path)
 
