@@ -1,6 +1,8 @@
 #lang info
 (define collection "libxml2")
 (define deps '("base"
+               ("xmllint-win32-x86_64" #:platform "win32\\x86_64"
+                                       #:version "0.1")
                ))
 (define build-deps '("scribble-lib"
                      "racket-doc"
