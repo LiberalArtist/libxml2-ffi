@@ -3,6 +3,8 @@
 (define deps '("base"
                ("xmllint-win32-x86_64" #:platform "win32\\x86_64"
                                        #:version "0.1")
+               ("libxml2-x86_64-linux-natipkg" #:platform
+                                               "x86_64-linux-natipkg")
                ))
 (define build-deps '("scribble-lib"
                      "racket-doc"
