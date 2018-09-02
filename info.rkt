@@ -1,6 +1,6 @@
 #lang info
 (define collection "libxml2")
-(define deps '("base"
+(define deps '(("base" #:version "7.0")
                ("xmllint-win32-x86_64" #:platform "win32\\x86_64"
                                        #:version "0.1")
                ("libxml2-x86_64-linux-natipkg" #:platform
