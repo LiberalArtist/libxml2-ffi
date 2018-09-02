@@ -147,6 +147,47 @@ XML validation, beginning with @tech{document type definitions}.
 
 
 
+@section{Checking Shared Library Availability}
+
+If the @tt{libxml2} shared library cannot be loaded,
+the Racket interface defers raising any exception
+until a client program attempts to use the foreign
+functionality.
+In other words, @racket[(require @#,racketmodname[libxml2])]
+should not cause an exception, even if attempting
+to load the shared library fails.
+(Currently, an immediate exception may be raised
+if the shared library is loaded, but does not provide
+the needed functionality.)
+
+@defproc[(libxml2-available?) boolean?]{
+ Returns @racket[#true] if and only if the @tt{libxml2}
+ shared library was loaded successfully.
+ When @racket[(libxml2-available?)] returns @racket[#false],
+ indicating that the shared library could not be loaded,
+ most functions provided by @racketmodname[libxml2]
+ will raise an exception of the @racket[exn:fail:unsupported:libxml2]
+ structure type.
+ 
+ @history[#:added "0.0.1"]
+}
+
+@defstruct*[(exn:fail:unsupported:libxml2 exn:fail:unsupported)
+            ([who symbol?])
+            #:omit-constructor]{
+ Raised by functions from this library that depend on
+ the @tt{libxml2} shared library when the foreign library
+ could not be loaded.
+ The @racket[who] field identifies the origin of the exception,
+ potentially in terms of the C API or other internal names.
+
+ See also @racket[libxml2-available?].
+
+ @history[#:added "0.0.1"]
+}
+
+
+
 
 @section{Usage Notes}
 

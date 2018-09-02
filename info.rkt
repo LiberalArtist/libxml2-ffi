@@ -13,5 +13,5 @@
                      ))
 (define scribblings '(("scribblings/libxml2.scrbl" ())))
 (define pkg-desc "Racket FFI bindings for libxml2")
-(define version "0.0")
+(define version "0.0.1")
 (define pkg-authors '(philip))

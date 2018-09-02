@@ -2,6 +2,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/define
+         "define-fail.rkt"
          ffi/unsafe/alloc
          xml
          racket/file
@@ -19,6 +20,15 @@
           [dtd-validate-xml-file
            (dtd-validate-proc/c
             (and/c path-string? file-exists?))]
+          ;;;;
+          [libxml2-available?
+           (->/c boolean?)]
+          [struct (exn:fail:unsupported:libxml2
+                   exn:fail:unsupported)
+            ([message string?]
+             [continuation-marks continuation-mark-set?]
+             [who symbol?])
+            #:omit-constructor]
           ))
 
 (define (dtd-validate-proc/c doc/c)
@@ -28,8 +38,26 @@
        (or/c 'valid
              (and/c string? immutable?))))
 
-(define-ffi-definer define-xml2
-  (ffi-lib "libxml2" '("2.9.3" #f)))
+(struct exn:fail:unsupported:libxml2 exn:fail:unsupported (who)
+  #:transparent)
+
+(define-ffi-definer/fail define-xml2
+  "libxml2" '("2.9.3" #f)
+  #:library-available? available?
+  #:on-load-failed
+  (λ () (log-error "libxml2: couldn't open libxml2 shared library"))
+  #:make/load-failed
+  (λ (who)
+    (λ _
+      (raise (exn:fail:unsupported:libxml2
+              (format "~a: couldn't open libxml2 shared library")
+              (current-continuation-marks)
+              who)))))
+
+(define (libxml2-available?)
+  ;; wrap w/ a thunk to be more robust against
+  ;; future design changes
+  available?)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -126,8 +154,7 @@
                (error 'fopen/write
                       "fdopen failed\n  given: ~e"
                       fd)))
-  ;;#:wrap (allocator fclose)
-  ;;NOT an allocator b/c we never want to call close on stderr
+  ;; NOT an allocator b/c we never want to call fclose on stderr
   #:c-id fdopen)
 
 (define stderr-ptr
